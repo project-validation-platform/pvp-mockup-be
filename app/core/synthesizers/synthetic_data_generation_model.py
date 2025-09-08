@@ -9,7 +9,7 @@ from sdv.single_table.base import BaseSingleTableSynthesizer
 from sdv.metadata import SingleTableMetadata
 from sdv.errors import NotFittedError, SynthesizerInputError
 
-from synthesizers.base_model import Generator, Discriminator
+from app.core.synthesizers.base_model import Generator, Discriminator
 
 
 class PATEGANSynthesizer(BaseSingleTableSynthesizer):

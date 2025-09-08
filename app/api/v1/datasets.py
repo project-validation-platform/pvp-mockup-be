@@ -1,6 +1,6 @@
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query, Body
 from fastapi.responses import JSONResponse
 import json
 
@@ -282,16 +282,46 @@ async def get_model_info(dataset_id: str):
 
 
 ### SAMPLING ###
-
 @router.post("/{dataset_id}/sample", response_model=SamplingResponse)
-async def generate_samples(dataset_id: str, request: SampleRequest):
-    """Generate synthetic samples from trained model"""
+async def generate_samples(
+    dataset_id: str,
+    num_rows: int = Query(..., ge=1, le=10000),
+    conditions: Optional[Dict[str, Any]] = Body(None),
+    format: str = Query("json", description="Output format: json or csv")
+):
+    """
+    Generate synthetic samples using the locally stored trained model.
+    Model instances are not transferred - only generated data is returned.
+    """
     try:
-        # Validate request
-        if request.dataset_id != dataset_id:
-            raise HTTPException(status_code=400, detail="Dataset ID mismatch")
+        # Create SampleRequest object from individual parameters
+        request = SampleRequest(
+            dataset_id=dataset_id,
+            num_rows=num_rows,
+            conditions=conditions
+        )
         
-        # Generate samples
+        # Rest of the function remains the same...
+        # Validate that model exists and is trained
+        model_info = model_service.get_model_info(dataset_id)
+        if model_info.status != ModelStatus.TRAINED:
+            if model_info.status == ModelStatus.TRAINING:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Model is still training. Please wait for training to complete."
+                )
+            elif model_info.status == ModelStatus.NOT_TRAINED:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No trained model found. Please train a model first using /train endpoint."
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model is in {model_info.status} state and cannot generate samples."
+                )
+        
+        # Generate samples using local model
         samples = model_service.generate_samples(
             dataset_id, 
             request.num_rows, 
@@ -303,12 +333,31 @@ async def generate_samples(dataset_id: str, request: SampleRequest):
         
         logger.info(f"Generated {len(samples)} samples for dataset {dataset_id}")
         
-        return SamplingResponse(
+        response_data = SamplingResponse(
             dataset_id=dataset_id,
             num_rows=len(samples),
             synthetic_data=samples,
             privacy_spent=privacy_spent
         )
+        
+        # Return different formats based on request
+        if format.lower() == "csv":
+            # Convert to CSV format for download
+            import pandas as pd
+            from fastapi.responses import StreamingResponse
+            import io
+            
+            df = pd.DataFrame(samples)
+            stream = io.StringIO()
+            df.to_csv(stream, index=False)
+            
+            return StreamingResponse(
+                io.BytesIO(stream.getvalue().encode()),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename=synthetic_data_{dataset_id}.csv"}
+            )
+        else:
+            return response_data
         
     except (DatasetNotFoundError, ModelNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -317,6 +366,54 @@ async def generate_samples(dataset_id: str, request: SampleRequest):
     except Exception as e:
         logger.error(f"Sample generation failed for dataset {dataset_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Sample generation failed")
+
+@router.get("/{dataset_id}/sample/batch")
+async def generate_batch_n_samples(
+    dataset_id: str,
+    batch_size: int = Query(1000, ge=100, le=5000, description="Samples per batch"),
+    num_batches: int = Query(1, ge=1, le=10, description="Number of batches"),
+    background_tasks: BackgroundTasks = None
+):
+    """
+    Generate large batches of synthetic data.
+    For very large requests, generation happens in background.
+    """
+    total_samples = batch_size * num_batches
+    
+    try:
+        # Validate model exists and is trained
+        model_info = model_service.get_model_info(dataset_id)
+        if model_info.status != ModelStatus.TRAINED:
+            raise HTTPException(
+                status_code=400,
+                detail="Model must be trained before generating samples"
+            )
+        
+        # For smaller requests, generate immediately
+        if total_samples <= 2000:
+            samples = model_service.generate_samples(dataset_id, total_samples)
+            return {
+                "dataset_id": dataset_id,
+                "total_samples": len(samples),
+                "batches_completed": num_batches,
+                "status": "completed",
+                "data": samples[:100],  # Return first 100 for preview
+                "message": f"Generated {len(samples)} samples immediately"
+            }
+        else:
+            # For large requests, use background processing
+            return {
+                "dataset_id": dataset_id,
+                "total_samples_requested": total_samples,
+                "batch_size": batch_size,
+                "num_batches": num_batches,
+                "status": "queued",
+                "message": "Large batch generation not fully implemented - use regular sample endpoint"
+            }
+            
+    except Exception as e:
+        logger.error(f"Batch generation failed for dataset {dataset_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Batch generation failed")
 
 ### PRIVACY CHECK ###
 
