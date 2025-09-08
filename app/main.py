@@ -1,4 +1,3 @@
-# app/main.py
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,9 +10,8 @@ from app.core.config import settings
 from app.core.exceptions import AppException, convert_to_http_exception
 from app.utils.logging import setup_logging
 
-# Import API routers (we'll create these next)
-from app.api.v1.datasets import router as datasets_router
-from app.api.v1.health import router as health_router
+# Import API router
+from app.api.v1.router import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,17 +86,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 # Include API routers
-app.include_router(
-    datasets_router,
-    prefix=f"{settings.API_V1_STR}/datasets",
-    tags=["datasets"]
-)
-
-app.include_router(
-    health_router,
-    prefix=f"{settings.API_V1_STR}/health",
-    tags=["health"]
-)
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # Root endpoint
 @app.get("/")
