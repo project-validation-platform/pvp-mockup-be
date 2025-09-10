@@ -15,45 +15,55 @@ class StorageService:
     def __init__(self):
         self.data_dir = Path(settings.DATA_DIR)
         self.model_dir = Path(settings.MODEL_DIR)
-        self.metadata_file = self.data_dir / "metadata.json"
         
         # Ensure directories exist
         self.data_dir.mkdir(exist_ok=True)
         self.model_dir.mkdir(exist_ok=True)
-        
-        # Load existing metadata
-        self._metadata = self._load_metadata()
     
-    def _load_metadata(self) -> Dict[str, Any]:
-        """Load metadata from JSON file"""
-        if self.metadata_file.exists():
+    def _get_metadata_path(self, dataset_id: str) -> Path:
+        """Get the metadata file path for a dataset"""
+        return self.data_dir / f"{dataset_id}_metadata.json"
+    
+    def _load_metadata(self, dataset_id: str) -> Dict[str, Any]:
+        """Load metadata from JSON file for a specific dataset"""
+        metadata_path = self._get_metadata_path(dataset_id)
+        if metadata_path.exists():
             try:
-                with open(self.metadata_file, 'r') as f:
+                with open(metadata_path, 'r') as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
-                return {"datasets": {}, "models": {}}
-        return {"datasets": {}, "models": {}}
+                return {"dataset": None, "model": None}
+        return {"dataset": None, "model": None}
     
-    def _save_metadata(self):
-        """Save metadata to JSON file"""
+    def _save_metadata(self, dataset_id: str, metadata: Dict[str, Any]):
+        """Save metadata to JSON file for a specific dataset"""
         try:
-            with open(self.metadata_file, 'w') as f:
-                json.dump(self._metadata, f, indent=2)
+            metadata_path = self._get_metadata_path(dataset_id)
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
         except IOError as e:
             raise FileProcessingError(f"Failed to save metadata: {str(e)}")
+    
+    def _get_dataset_csv_path(self, dataset_id: str) -> Path:
+        """Get the CSV file path for a dataset"""
+        return self.data_dir / f"{dataset_id}.csv"
+    
+    def _get_model_pkl_path(self, dataset_id: str) -> Path:
+        """Get the model pickle file path for a dataset"""
+        return self.model_dir / f"{dataset_id}.pkl"
     
     def save_dataset(self, file_contents: bytes, filename: str, metadata: Optional[Dict[str, Any]] = None) -> DatasetInfo:
         """Save uploaded dataset and return dataset info"""
         dataset_id = str(uuid.uuid4())
-        file_path = self.data_dir / f"{dataset_id}.csv"
+        csv_path = self._get_dataset_csv_path(dataset_id)
         
         try:
             # Save CSV file
-            with open(file_path, 'wb') as f:
+            with open(csv_path, 'wb') as f:
                 f.write(file_contents)
             
             # Load and validate CSV
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(csv_path)
             if df.empty:
                 raise FileProcessingError("Uploaded CSV file is empty")
             
@@ -68,93 +78,120 @@ class StorageService:
                 metadata=metadata
             )
             
-            # Store in metadata
-            self._metadata["datasets"][dataset_id] = dataset_info.dict()
-            self._save_metadata()
+            # Load existing metadata (in case model info exists)
+            existing_metadata = self._load_metadata(dataset_id)
+            
+            # Update with dataset info
+            existing_metadata["dataset"] = dataset_info.model_dump()
+            
+            # Save metadata
+            self._save_metadata(dataset_id, existing_metadata)
             
             return dataset_info
             
         except pd.errors.EmptyDataError:
+            # Cleanup on error
+            if csv_path.exists():
+                csv_path.unlink()
             raise FileProcessingError("Invalid CSV file - no data found")
         except pd.errors.ParserError as e:
+            # Cleanup on error
+            if csv_path.exists():
+                csv_path.unlink()
             raise FileProcessingError(f"Invalid CSV format: {str(e)}")
         except Exception as e:
             # Cleanup file if something went wrong
-            if file_path.exists():
-                file_path.unlink()
+            if csv_path.exists():
+                csv_path.unlink()
             raise FileProcessingError(f"Failed to process dataset: {str(e)}")
     
     def get_dataset(self, dataset_id: str) -> pd.DataFrame:
         """Load dataset as DataFrame"""
-        if dataset_id not in self._metadata["datasets"]:
+        # Check if dataset exists in metadata
+        metadata = self._load_metadata(dataset_id)
+        if not metadata.get("dataset"):
             raise DatasetNotFoundError(dataset_id)
         
-        file_path = self.data_dir / f"{dataset_id}.csv"
-        if not file_path.exists():
+        csv_path = self._get_dataset_csv_path(dataset_id)
+        if not csv_path.exists():
             raise DatasetNotFoundError(dataset_id)
         
         try:
-            return pd.read_csv(file_path)
+            return pd.read_csv(csv_path)
         except Exception as e:
             raise FileProcessingError(f"Failed to load dataset: {str(e)}")
     
     def get_dataset_info(self, dataset_id: str) -> DatasetInfo:
         """Get dataset metadata"""
-        if dataset_id not in self._metadata["datasets"]:
+        metadata = self._load_metadata(dataset_id)
+        if not metadata.get("dataset"):
             raise DatasetNotFoundError(dataset_id)
         
-        return DatasetInfo(**self._metadata["datasets"][dataset_id])
+        return DatasetInfo(**metadata["dataset"])
     
     def list_datasets(self) -> List[DatasetInfo]:
         """List all datasets"""
-        return [DatasetInfo(**info) for info in self._metadata["datasets"].values()]
+        datasets = []
+        
+        # Find all metadata files
+        for metadata_file in self.data_dir.glob("*_metadata.json"):
+            try:
+                dataset_id = metadata_file.stem.replace("_metadata", "")
+                metadata = self._load_metadata(dataset_id)
+                if metadata.get("dataset"):
+                    datasets.append(DatasetInfo(**metadata["dataset"]))
+            except Exception:
+                # Skip corrupted metadata files
+                continue
+        
+        return datasets
     
     def delete_dataset(self, dataset_id: str):
         """Delete dataset and associated model"""
-        if dataset_id not in self._metadata["datasets"]:
+        metadata = self._load_metadata(dataset_id)
+        if not metadata.get("dataset"):
             raise DatasetNotFoundError(dataset_id)
         
         # Delete files
-        dataset_file = self.data_dir / f"{dataset_id}.csv"
-        model_file = self.model_dir / f"{dataset_id}.pkl"
+        csv_path = self._get_dataset_csv_path(dataset_id)
+        model_path = self._get_model_pkl_path(dataset_id)
+        metadata_path = self._get_metadata_path(dataset_id)
         
-        if dataset_file.exists():
-            dataset_file.unlink()
-        if model_file.exists():
-            model_file.unlink()
-        
-        # Remove from metadata
-        del self._metadata["datasets"][dataset_id]
-        if dataset_id in self._metadata["models"]:
-            del self._metadata["models"][dataset_id]
-        
-        self._save_metadata()
+        if csv_path.exists():
+            csv_path.unlink()
+        if model_path.exists():
+            model_path.unlink()
+        if metadata_path.exists():
+            metadata_path.unlink()
     
     def save_model(self, dataset_id: str, model, model_info: ModelInfo):
         """Save trained model"""
-        if dataset_id not in self._metadata["datasets"]:
+        # Check if dataset exists
+        metadata = self._load_metadata(dataset_id)
+        if not metadata.get("dataset"):
             raise DatasetNotFoundError(dataset_id)
         
-        model_path = self.model_dir / f"{dataset_id}.pkl"
+        model_path = self._get_model_pkl_path(dataset_id)
         
         try:
-            # Save model using pickle (since SDV models may not have save method)
+            # Save model using pickle
             with open(model_path, 'wb') as f:
                 pickle.dump(model, f)
             
-            # Update metadata
-            self._metadata["models"][dataset_id] = model_info.dict()
-            self._save_metadata()
+            # Update metadata with model info
+            metadata["model"] = model_info.model_dump()
+            self._save_metadata(dataset_id, metadata)
             
         except Exception as e:
             raise FileProcessingError(f"Failed to save model: {str(e)}")
     
     def load_model(self, dataset_id: str):
         """Load trained model"""
-        if dataset_id not in self._metadata["models"]:
+        metadata = self._load_metadata(dataset_id)
+        if not metadata.get("model"):
             raise ModelNotFoundError(dataset_id)
         
-        model_path = self.model_dir / f"{dataset_id}.pkl"
+        model_path = self._get_model_pkl_path(dataset_id)
         if not model_path.exists():
             raise ModelNotFoundError(dataset_id)
         
@@ -166,34 +203,73 @@ class StorageService:
     
     def get_model_info(self, dataset_id: str) -> ModelInfo:
         """Get model metadata"""
-        if dataset_id not in self._metadata["models"]:
+        metadata = self._load_metadata(dataset_id)
+        if not metadata.get("model"):
             raise ModelNotFoundError(dataset_id)
         
-        return ModelInfo(**self._metadata["models"][dataset_id])
+        return ModelInfo(**metadata["model"])
     
     def update_model_status(self, dataset_id: str, status: ModelStatus, **kwargs):
         """Update model status and other info"""
-        if dataset_id not in self._metadata["models"]:
-            # Create new model entry
-            self._metadata["models"][dataset_id] = {
+        metadata = self._load_metadata(dataset_id)
+        
+        # Initialize model metadata if it doesn't exist
+        if not metadata.get("model"):
+            metadata["model"] = {
                 "dataset_id": dataset_id,
                 "status": status.value
             }
         
         # Update status and other fields
-        model_data = self._metadata["models"][dataset_id]
+        model_data = metadata["model"]
         model_data["status"] = status.value
         
+        # Update additional fields
         for key, value in kwargs.items():
             if hasattr(ModelInfo, key):
-                model_data[key] = value
+                if key.endswith('_at') and isinstance(value, str):
+                    # Ensure datetime fields are properly formatted
+                    model_data[key] = value
+                else:
+                    model_data[key] = value
         
-        self._save_metadata()
+        # Save updated metadata
+        self._save_metadata(dataset_id, metadata)
     
     def model_exists(self, dataset_id: str) -> bool:
         """Check if model exists for dataset"""
-        return (dataset_id in self._metadata["models"] and 
-                self._metadata["models"][dataset_id].get("status") == ModelStatus.TRAINED.value)
+        try:
+            metadata = self._load_metadata(dataset_id)
+            model_info = metadata.get("model")
+            return (model_info is not None and 
+                    model_info.get("status") == ModelStatus.TRAINED.value and
+                    self._get_model_pkl_path(dataset_id).exists())
+        except Exception:
+            return False
+    
+    def get_all_dataset_ids(self) -> List[str]:
+        """Get all dataset IDs that have metadata files"""
+        dataset_ids = []
+        for metadata_file in self.data_dir.glob("*_metadata.json"):
+            dataset_id = metadata_file.stem.replace("_metadata", "")
+            dataset_ids.append(dataset_id)
+        return dataset_ids
+    
+    def cleanup_orphaned_files(self):
+        """Clean up files that don't have corresponding metadata"""
+        valid_dataset_ids = set(self.get_all_dataset_ids())
+        
+        # Clean up orphaned CSV files
+        for csv_file in self.data_dir.glob("*.csv"):
+            dataset_id = csv_file.stem
+            if dataset_id not in valid_dataset_ids:
+                csv_file.unlink()
+        
+        # Clean up orphaned model files
+        for pkl_file in self.model_dir.glob("*.pkl"):
+            dataset_id = pkl_file.stem
+            if dataset_id not in valid_dataset_ids:
+                pkl_file.unlink()
 
 # Global storage service instance
 storage_service = StorageService()

@@ -46,8 +46,8 @@ class ModelService:
         storage_service.update_model_status(
             dataset_id, 
             ModelStatus.TRAINING,
-            config=config.dict(),
-            training_started_at=datetime.utcnow().isoformat()
+            config=config.model_dump(),
+            training_started_at=datetime.now().isoformat()
         )
         
         try:
