@@ -30,7 +30,7 @@ def main():
     # Save to CSV
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out, index=False)
-    print(f"[✓] Saved {len(df)} synthetic rows to {args.out}")
+    print(f"Saved {len(df)} synthetic rows to {args.out}")
 
 if __name__ == "__main__":
     main()
