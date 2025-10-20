@@ -50,16 +50,9 @@ CREATE TABLE experiments_datasets (
 -- Table: workflows
 CREATE TABLE workflows (
     workflow_id TEXT PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL
-);
-
--- Table: experiments_workflows (Junction Table)
-CREATE TABLE experiments_workflows (
-    experiment_id TEXT NOT NULL,
-    workflow_id TEXT NOT NULL,
-    PRIMARY KEY (experiment_id, workflow_id),
-    FOREIGN KEY (experiment_id) REFERENCES experiments (experiment_id),
-    FOREIGN KEY (workflow_id) REFERENCES workflows (workflow_id)
+    experiment_id TEXT,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    FOREIGN KEY (experiment_id) REFERENCES experiments (experiment_id)
 );
 
 -- Table: block_configs
