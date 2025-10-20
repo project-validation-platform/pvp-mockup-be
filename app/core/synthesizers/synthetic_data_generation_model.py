@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Any
 from sdv.single_table.base import BaseSingleTableSynthesizer
 from sdv.metadata import SingleTableMetadata
 from sdv.errors import NotFittedError, SynthesizerInputError
-
+import os
 from app.core.synthesizers.base_model import Generator, Discriminator
 
 
@@ -31,7 +31,7 @@ class PATEGANSynthesizer(BaseSingleTableSynthesizer):
         enforce_min_max_values: bool = True,
         enforce_rounding: bool = True,
         locales: Optional[List[str]] = None,
-        device: str = 'auto',
+        device: str = 'cpu',
         verbose: bool = True
     ):
 
@@ -57,7 +57,7 @@ class PATEGANSynthesizer(BaseSingleTableSynthesizer):
         self.verbose = verbose
 
         self.device = torch.device(
-            'cuda' if (device == 'auto' and torch.cuda.is_available()) else device
+            'cuda' if (device == 'cuda' and torch.cuda.is_available()) else device
         ) if isinstance(device, str) else device
 
         self.teacher_models: List[Discriminator] = []
@@ -192,5 +192,5 @@ class PATEGANSynthesizer(BaseSingleTableSynthesizer):
 
         synthetic_array = torch.cat(all_batches, dim=0).cpu().numpy()
         synthetic_df = pd.DataFrame(synthetic_array, columns=self.preprocessed_columns)
-        self._data_processor.reverse_transform(synthetic_df).to_csv("test.csv")
+        self._data_processor.reverse_transform(synthetic_df).to_csv(os.path.join("results", "test.csv"))
         return self._data_processor.reverse_transform(synthetic_df)

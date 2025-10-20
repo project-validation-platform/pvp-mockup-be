@@ -1,0 +1,49 @@
+services:
+  db:
+    # Use the official PostgreSQL image
+    image: postgres:16-alpine 
+    container_name: pvp_db
+    
+    # Environment variables for configuration
+    environment:
+      # !! CHANGE THESE VALUES FOR PRODUCTION !!
+      # Required: sets the password for the superuser (postgres)
+      POSTGRES_PASSWORD: postgres 
+      
+      # Optional: sets a user with superuser privileges (and creates a DB with the same name)
+      POSTGRES_USER: postgres 
+      
+      # Optional: sets the name of the default database
+      POSTGRES_DB: postgres
+      
+      # Defines the directory where data will be stored (default is /var/lib/postgresql/data)
+      PGDATA: /var/lib/postgresql/data/pgdata
+      
+    # Map the container's port 5432 to your host machine's port 5432
+    # This allows you to connect from your local machine (e.g., using a client like DBeaver)
+    ports:
+      - "5432:5432"
+      
+    # Mount a volume for data persistence. Data will be saved on your host machine.
+    volumes:
+      # Creates a Docker managed volume named 'pvp_data' for the database files
+      - pvp_data:/var/lib/postgresql/data/pvp_data
+      
+      # This is where you can place initialization scripts (optional)
+      # Any *.sql or *.sh files placed in ./docker-entrypoint-initdb.d/ 
+      # will be run when the container starts for the first time.
+      # - ./init_scripts:/docker-entrypoint-initdb.d
+      
+    # Ensure the container restarts unless manually stopped
+    restart: unless-stopped
+    
+    # Healthcheck configuration (good practice)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d experiment_tracker_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  # Define the volume used by the service
+  pvp_data:
