@@ -17,7 +17,7 @@ services:
       POSTGRES_DB: postgres
       
       # Defines the directory where data will be stored (default is /var/lib/postgresql/data)
-      PGDATA: /var/lib/postgresql/data/pgdata
+      PVPDATA: /var/lib/postgresql/data/pvp_data
       
     # Map the container's port 5432 to your host machine's port 5432
     # This allows you to connect from your local machine (e.g., using a client like DBeaver)
