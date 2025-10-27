@@ -30,18 +30,18 @@ class ExperimentConfig(BaseModel):
     parameters: Dict[str, Any]
 
 #### --- Helper Functions --- ####
-def get_schema_info(df: pd.DataFrame) -> Dict[str, Any]:
+def get_df_info(df: pd.DataFrame) -> Dict[str, Any]:
     """
-    Extract schema information from a DataFrame
+    Extract dataframe information from a DataFrame
     """
-    schema = {}
+    df_info = {}
     for col in df.columns:
-        schema[col] = {
+        df_info[col] = {
             "dtype": str(df[col].dtype),
             "num_missing": int(df[col].isnull().sum()),
             "num_unique": int(df[col].nunique())
         }
-    return schema
+    return df_info
 
 #### --- Sandbox API Endpoints --- ####
 @router.get("/")
@@ -109,19 +109,18 @@ async def validate_csv(file: UploadFile = File(...)):
     
     has_header = pd.read_csv(io.StringIO(raw.decode('utf-8')), nrows=0).columns.tolist() == columns
     
-    dup_cols = df.columns[df.columns.duplicated()].tolist()
+    cols_count = df.columns.value_counts().to_dict()
+    dup_cols_count = {col: count for col, count in cols_count.itmes() if count > 1}
     
     empty_cols = [col for col in df.columns if df[col].isnull().all()]        
 
-    
-    # Placeholder validation
     return {
         "valid": empty_cols == [],
         "message": "OK" if len(dup_cols) == 0 and len(empty_cols) == 0 and has_header else "Potential issues found",
         "filename": file.filename,
         "size": file.size,
         "has_header": has_header,
-        "duplicate_columns": sorted(set(dup_cols)),
+        "duplicate_columns": dup_cols_count,
         "empty_columns": empty_cols
     }
 
@@ -176,7 +175,7 @@ async def test_model_config(config: ExperimentConfig):
         "description": config.description,
         "valid": len(issues) == 0,
         "issues": issues,
-        "schema": get_schema_info(df),
+        "dataframe info": get_df_info(df),
         "message": "Model configuration test completed"
     }
 
