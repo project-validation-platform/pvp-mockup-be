@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # CORS Settings
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     
+    # DB Settings
+    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
+    
     # File Storage
     DATA_DIR: str = "data"
     MODEL_DIR: str = "models"
@@ -39,7 +42,6 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Ensure directories exist
         Path(self.DATA_DIR).mkdir(exist_ok=True)
         Path(self.MODEL_DIR).mkdir(exist_ok=True)
 

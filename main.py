@@ -8,22 +8,24 @@ from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
 from app.core.exceptions import AppException, convert_to_http_exception
+from app.db.session import init_db
 from app.utils.logging import setup_logging
 
 # Import API router
 from app.api.v1.router import api_router
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    # Startup
     setup_logging()
+    init_db()
     logging.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
-    
+
     yield
-    
-    # Shutdown
+
     logging.info("Shutting down application")
+
 
 # Create FastAPI app
 app = FastAPI(
