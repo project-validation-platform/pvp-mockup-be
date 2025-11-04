@@ -1,17 +1,17 @@
 services:
   db:
     # Use the official PostgreSQL image
-    image: postgres:16-alpine 
+    image: postgres:16-alpine
     container_name: pvp_db
     
     # Environment variables for configuration
     environment:
       # !! CHANGE THESE VALUES FOR PRODUCTION !!
       # Required: sets the password for the superuser (postgres)
-      POSTGRES_PASSWORD: postgres 
+      POSTGRES_PASSWORD: postgres
       
       # Optional: sets a user with superuser privileges (and creates a DB with the same name)
-      POSTGRES_USER: postgres 
+      POSTGRES_USER: postgres
       
       # Optional: sets the name of the default database
       POSTGRES_DB: postgres
@@ -23,7 +23,7 @@ services:
     # This allows you to connect from your local machine (e.g., using a client like DBeaver)
     ports:
       - "5432:5432"
-      
+
     # Mount a volume for data persistence. Data will be saved on your host machine.
     volumes:
       # Creates a Docker managed volume named 'pvp_data' for the database files
@@ -45,5 +45,4 @@ services:
       retries: 5
 
 volumes:
-  # Define the volume used by the service
   pvp_data:
