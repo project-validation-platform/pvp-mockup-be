@@ -6,7 +6,7 @@ from typing import List
 class Settings(BaseSettings):
     # API Settings
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "PATE-GAN Synthetic Data API"
+    PROJECT_NAME: str = "Synthetic Data API"
     VERSION: str = "1.0.0"
     DEBUG: bool = True
     
