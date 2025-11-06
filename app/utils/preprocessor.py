@@ -5,6 +5,22 @@ from sklearn.impute import SimpleImputer
 
 def classify_columns(df, cardinality_threshold=20, binary_as_categorical=True):
     categorical_cols, numerical_cols, binary_cols, datetime_cols = [], [], [], []
+def preprocess_data(df, cardinality_threshold=20, binary_as_categorical=True):
+    """
+    Preprocesses a tabular dataset for input into PATE-GAN.
+    
+    Returns:
+        - processed_data (np.ndarray): The transformed data matrix
+        - feature_names (List[str]): Column names after encoding
+    """
+    df = df.copy()
+    
+    # Column classification
+    categorical_cols = []
+    numerical_cols = []
+    binary_cols = []
+    datetime_cols = []
+
     for col in df.columns:
         unique_vals = df[col].dropna().unique()
         num_unique = len(unique_vals)
