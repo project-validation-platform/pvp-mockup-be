@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
-from app.core.exceptions import AppException, convert_to_http_exception
 from app.db.session import init_db
 from app.utils.logging import setup_logging
 
@@ -44,20 +43,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global exception handlers
-@app.exception_handler(AppException)
-async def app_exception_handler(request: Request, exc: AppException):
-    """Handle custom application exceptions"""
-    logging.error(f"Application error: {exc.message}", extra={"details": exc.details})
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "message": exc.message,
-                "details": exc.details
-            }
-        }
-    )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

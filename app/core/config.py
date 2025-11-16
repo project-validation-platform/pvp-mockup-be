@@ -11,9 +11,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Airflow Settings
-    AIRFLOW_API_URL: str = ""
-    AIRFLOW_API_USER: str = ""
-    AIRFLOW_API_PASS: str = ""
+    AIRFLOW_API_URL: str = "http://localhost:8080/api/v2"
+    AIRFLOW_API_USER: str = "admin"
+    AIRFLOW_API_PASS: str = "admin"
 
     # CORS Settings
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
