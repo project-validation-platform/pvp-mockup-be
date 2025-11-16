@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = True
     
+    # Airflow Settings
+    AIRFLOW_API_URL: str = ""
+    AIRFLOW_API_USER: str = ""
+    AIRFLOW_API_PASS: str = ""
+
     # CORS Settings
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     

@@ -223,51 +223,35 @@ async def list_all_model_status():
 @router.post("/{dataset_id}/train", response_model=TrainingResponse)
 async def train_model(
     dataset_id: str,
-    background_tasks: BackgroundTasks,
+    # REMOVE THIS: background_tasks: BackgroundTasks,
     config: Optional[ModelTrainingConfig] = None
 ):
     """
-    Train a PATE-GAN model on the dataset
-    Training runs in the background for large datasets
+    Triggers a background training job via Airflow.
     """
     try:
         # Validate dataset exists
-        dataset_info = storage_service.get_dataset_info(dataset_id)
+        storage_service.get_dataset_info(dataset_id)
         
-        # Use default config if none provided
         if config is None:
-            config = ModelTrainingConfig()
+            config = ModelTrainingConfig() # Use default
         
-        # For small datasets, train synchronously
-        if dataset_info.rows < 1000:
-            model_info = model_service.train_model(dataset_id, config)
-            
-            return TrainingResponse(
+        # This is the NEW logic
+        run_id = model_service.trigger_training_workflow(dataset_id, config)
+        
+        # Return an "accepted" response immediately
+        return TrainingResponse(
+            dataset_id=dataset_id,
+            message=f"Training job queued successfully. Run ID: {run_id}",
+            model_info=ModelInfo(
                 dataset_id=dataset_id,
-                message="Model trained successfully",
-                model_info=model_info
+                status=ModelStatus.TRAINING,
+                config=config
             )
-        else:
-            # For large datasets, train in background
-            background_tasks.add_task(train_model_background, dataset_id, config)
-            
-            # Update status to training
-            storage_service.update_model_status(dataset_id, "training")
-            
-            return TrainingResponse(
-                dataset_id=dataset_id,
-                message="Model training started in background",
-                model_info=ModelInfo(
-                    dataset_id=dataset_id,
-                    status="training",
-                    config=config
-                )
-            )
+        )
             
     except DatasetNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except ModelTrainingError as e:
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Training request failed for dataset {dataset_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Training request failed")
