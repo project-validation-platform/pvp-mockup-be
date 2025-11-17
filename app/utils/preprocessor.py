@@ -3,6 +3,8 @@ import numpy as np
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from sklearn.impute import SimpleImputer
 
+def classify_columns(df, cardinality_threshold=20, binary_as_categorical=True):
+    categorical_cols, numerical_cols, binary_cols, datetime_cols = [], [], [], []
 def preprocess_data(df, cardinality_threshold=20, binary_as_categorical=True):
     """
     Preprocesses a tabular dataset for input into PATE-GAN.
@@ -39,50 +41,76 @@ def preprocess_data(df, cardinality_threshold=20, binary_as_categorical=True):
                 categorical_cols.append(col)
             else:
                 numerical_cols.append(col)
+    return categorical_cols, numerical_cols, binary_cols, datetime_cols
 
-    # Drop datetime columns (or optionally convert)
-    df = df.drop(columns=datetime_cols)
+def drop_datetime_columns(df, datetime_cols):
+    return df.drop(columns=datetime_cols)
 
-    # Impute missing values
+def impute_missing_values(df, categorical_cols, numerical_cols):
     if categorical_cols:
         cat_imputer = SimpleImputer(strategy='most_frequent')
         df[categorical_cols] = cat_imputer.fit_transform(df[categorical_cols])
-
     if numerical_cols:
         num_imputer = SimpleImputer(strategy='mean')
         df[numerical_cols] = num_imputer.fit_transform(df[numerical_cols])
+    return df
 
-    # Encode categoricals
+def encode_categoricals(df, categorical_cols):
+    if not categorical_cols:
+        return np.empty((len(df), 0), dtype=np.float32), None
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    cat_encoded = encoder.fit_transform(df[categorical_cols]) if categorical_cols else np.array([])
+    encoded = encoder.fit_transform(df[categorical_cols])
+    return encoded, encoder
 
-    # Normalize numericals
+def scale_numericals(df, numerical_cols):
+    if not numerical_cols:
+        return np.empty((len(df), 0), dtype=np.float32), None
     scaler = MinMaxScaler()
-    num_scaled = scaler.fit_transform(df[numerical_cols]) if numerical_cols else np.array([])
+    scaled = scaler.fit_transform(df[numerical_cols])
+    return scaled, scaler
 
-    # Binary columns (if not included in cat/numeric)
-    bin_data = df[binary_cols].values if binary_cols and not binary_as_categorical else np.array([])
-
-    # Combine everything
+def combine_parts(cat_encoded, num_scaled, bin_data, n_rows):
     parts = [p for p in [cat_encoded, num_scaled, bin_data] if p.size > 0]
-    processed_data = np.hstack(parts).astype(np.float32)
+    if parts:
+        return np.hstack(parts).astype(np.float32)
+    return np.empty((n_rows, 0), dtype=np.float32)
 
-    # Get feature names
+def preprocess_data(df, cardinality_threshold=20, binary_as_categorical=True):
+    df = df.copy()
+
+    cat_cols, num_cols, bin_cols, dt_cols = classify_columns(
+        df, cardinality_threshold, binary_as_categorical
+    )
+
+    df = drop_datetime_columns(df, dt_cols)
+    
+    df = impute_missing_values(df, cat_cols, num_cols)
+
+    cat_encoded, encoder = encode_categoricals(df, cat_cols)
+    num_scaled, scaler = scale_numericals(df, num_cols)
+
+    bin_data = df[bin_cols].values.astype(np.float32) if (bin_cols and not binary_as_categorical) else np.empty((len(df), 0), dtype=np.float32)
+
+    processed = combine_parts(cat_encoded, num_scaled, bin_data, n_rows=len(df))
+
     feature_names = []
-    if categorical_cols:
-        feature_names += encoder.get_feature_names_out(categorical_cols).tolist()
-    if numerical_cols:
-        feature_names += numerical_cols
-    if binary_cols and not binary_as_categorical:
-        feature_names += binary_cols
+    if cat_cols:
+        feature_names += OneHotEncoder(sparse_output=False, handle_unknown='ignore').get_feature_names_out
+        feature_names = encoder.get_feature_names_out(cat_cols).tolist()
+    if num_cols:
+        feature_names += num_cols
+    if bin_cols and not binary_as_categorical:
+        feature_names += bin_cols
 
-    return processed_data, feature_names, {
-        "categorical_cols": categorical_cols,
-        "numerical_cols": numerical_cols,
-        "binary_cols": binary_cols,
-        "encoder": encoder if categorical_cols else None,
-        "scaler": scaler if numerical_cols else None
+    return processed, feature_names, {
+        "categorical_cols": cat_cols,
+        "numerical_cols": num_cols,
+        "binary_cols": bin_cols,
+        "binary_as_categorical": binary_as_categorical,
+        "encoder": encoder,
+        "scaler": scaler
     }
+
 
 def reconstruct_data(synth_data, metadata):
     """
