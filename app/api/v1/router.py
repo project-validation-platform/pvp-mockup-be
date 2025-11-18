@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import datasets, health, auth, sandbox
+from app.api.v1 import datasets, health, auth, sandbox, workflow
 
 # Create main v1 router
 api_router = APIRouter()
@@ -28,4 +28,10 @@ api_router.include_router(
     sandbox.router,
     prefix="/sandbox",
     tags=["sandbox"]
+)
+
+api_router.include_router(
+    sandbox.router,
+    prefix="/workflow",
+    tags=["workflow"]
 )

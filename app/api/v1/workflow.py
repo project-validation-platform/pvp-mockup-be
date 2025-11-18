@@ -1,9 +1,13 @@
 import requests
+import logging
 
 from app.core.config import settings
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query, Body
 from fastapi.responses import JSONResponse
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

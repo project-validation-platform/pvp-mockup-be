@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Generate synthetic samples from a saved CTGAN or PATEGAN model (.pkl).
 

@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, cast
 import pandas as pd
 import io
 
-from app.utils import preprocess_data
+from pvp_core_lib.utils.preprocessor import preprocess_data, reconstruct_data
+from pvp_core_lib.exceptions import DatasetNotFoundError
+from pvp_core_lib.storage import storage_service
 
 
 router = APIRouter()
@@ -36,7 +38,7 @@ def get_df_info(df: pd.DataFrame) -> Dict[str, Any]:
     """
     df_info = {}
     for col in df.columns:
-        df_info[col] = {
+        df_info[str(col)] = {
             "dtype": str(df[col].dtype),
             "num_missing": int(df[col].isnull().sum()),
             "num_unique": int(df[col].nunique())
@@ -64,33 +66,59 @@ async def sandbox_info():
 @router.post("/data/preview", response_model=DataPreviewResponse)
 async def preview_dataset(request: DataPreviewRequest):
     """
-    Preview dataset structure and sample data
-    TODO: Implement dataset preview functionality
+    Preview dataset structure and sample data.
+    This shows the data *after* basic preprocessing steps like imputation.
     """
-
     try:
-        df = pd.read_csv(request.dataset_id)
-        preprocessed_df, feature_names, metadata = preprocess_data(df)
-        preprocessed_df_head = preprocessed_df.head(request.num_rows)
+        # Load original data
+        df = storage_service.get_dataset(request.dataset_id)
+        
+        # Preprocess (returns numpy array, feature names, and metadata)
+        processed_data, feature_names, metadata = preprocess_data(df)
+        
+        # Reconstruct back to DataFrame for readability
+        # We only reconstruct the head to save time/memory
+        # Slice the array first
+        processed_head = processed_data[:request.num_rows]
+        reconstructed_df_head = reconstruct_data(processed_head, metadata)
+
+        # Convert to dict records, ensuring keys are strings
+        # to_dict(orient="records") returns List[Dict[Hashable, Any]]
+        # We explicitly cast or process to ensure Pydantic is happy.
+        # Since we know column names are strings (from feature_names), cast is safe-ish,
+        # but a comprehension is safer for type checkers.
+        raw_records = reconstructed_df_head.to_dict(orient="records")
+        sample_data: List[Dict[str, Any]] = [
+            {str(k): v for k, v in record.items()} 
+            for record in raw_records
+        ]
 
         return DataPreviewResponse(
-            columns=preprocessed_df_head.columns.tolist(),
-            dtypes={col: str(dtype) for col, dtype in preprocessed_df_head.dtypes.items()},
-            sample_data=preprocessed_df_head.to_dict(orient="records"),
-            total_rows=len(pd.read_csv(request.dataset_id))
+            columns=reconstructed_df_head.columns.tolist(),
+            dtypes={str(col): str(dtype) for col, dtype in reconstructed_df_head.dtypes.items()},
+            sample_data=sample_data,
+            total_rows=len(df)
+        )
+    except DatasetNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dataset {request.dataset_id} not found"
         )
     except Exception as e:
         raise HTTPException(
-            status_code=501,
-            detail="Dataset preview not implemented yet"
+            status_code=500,
+            detail=f"Preview generation failed: {str(e)}"
         )
 
 @router.post("/data/validate")
 async def validate_csv(file: UploadFile = File(...)):
     """
     Validate CSV file structure without saving
-    TODO: Implement CSV validation logic
     """
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
     
@@ -107,16 +135,17 @@ async def validate_csv(file: UploadFile = File(...)):
     if not columns:
         raise HTTPException(status_code=400, detail="CSV has no columns")
     
+    # Re-read just the header to double check consistency (optional but safe)
     has_header = pd.read_csv(io.StringIO(raw.decode('utf-8')), nrows=0).columns.tolist() == columns
     
     cols_count = df.columns.value_counts().to_dict()
-    dup_cols_count = {col: count for col, count in cols_count.itmes() if count > 1}
+    dup_cols_count = {col: count for col, count in cols_count.items() if count > 1}
     
     empty_cols = [col for col in df.columns if df[col].isnull().all()]        
 
     return {
         "valid": empty_cols == [],
-        "message": "OK" if len(dup_cols) == 0 and len(empty_cols) == 0 and has_header else "Potential issues found",
+        "message": "OK" if len(dup_cols_count) == 0 and len(empty_cols) == 0 and has_header else "Potential issues found",
         "filename": file.filename,
         "size": file.size,
         "has_header": has_header,
@@ -127,20 +156,26 @@ async def validate_csv(file: UploadFile = File(...)):
 @router.post("/models/test")
 async def test_model_config(config: ExperimentConfig):
     """
-    Test model configuration without full training
-    TODO: Implement quick model validation
+    Test model configuration without full training.
+    Performs basic validation on features and targets.
     """
-
     params = config.parameters or {}
     dataset_id = params.get("dataset_id", "")
+    
     if not dataset_id:
-        raise HTTPException(status_code = 400, detail = "parameters.dataset_id is missing")
+        raise HTTPException(status_code=400, detail="parameters.dataset_id is missing")
     
     try:
-        df = pd.read_csv(dataset_id, nrows = 1000)
-        preprocessed_df, feature_names, metadata = preprocess_data(df)
+        # Use storage_service.get_dataset
+        df = storage_service.get_dataset(dataset_id)
+        
+        # Run preprocessing to validate data quality/compatibility
+        preprocess_data(df)
+        
+    except DatasetNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_id} not found")
     except Exception as e:
-        raise HTTPException(status_code=400, detail= f"Invalid dataset_id provided : {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid dataset or preprocessing failed: {e}")
     
     issues: List[str] = []
 
@@ -150,16 +185,17 @@ async def test_model_config(config: ExperimentConfig):
     if target:
         if target not in df.columns:
             issues.append(f"Target column '{target}' not found in dataset")
-        
-        if df[target].isnull().all():
-            issues.append(f"Target column '{target}' contains only null values")
-        elif df[target].isnull() > len(df) * 0.5:
-            issues.append(f"Target column '{target}' has more than 50% missing values")
-        
-        if df[target].nunique() < 2:
-            issues.append(f"Target column '{target}' must have at least 2 unique values")
+        else:
+            if df[target].isnull().all():
+                issues.append(f"Target column '{target}' contains only null values")
+            elif df[target].isnull().sum() > len(df) * 0.5:
+                issues.append(f"Target column '{target}' has more than 50% missing values")
+            
+            if df[target].nunique() < 2:
+                issues.append(f"Target column '{target}' must have at least 2 unique values")
     else:
-        issues.append("parameters.target is missing")
+        # Not all models require a target
+        pass 
 
     # check if features (inputs for ML) are valid and available
     features = params.get("features", [])
@@ -167,15 +203,13 @@ async def test_model_config(config: ExperimentConfig):
         missing_features = [f for f in features if f not in df.columns]
         if missing_features:
             issues.append(f"Features not found in dataset: {', '.join(missing_features)}")
-    else:
-        issues.append("parameters.features is missing")
     
     return {
         "name": config.name,
         "description": config.description,
         "valid": len(issues) == 0,
         "issues": issues,
-        "dataframe info": get_df_info(df),
+        "dataframe_info": get_df_info(df),
         "message": "Model configuration test completed"
     }
 
@@ -184,10 +218,12 @@ async def test_model_config(config: ExperimentConfig):
 async def compare_models(request: ModelComparisonRequest):
     """
     Compare different model configurations
-    TODO: Implement model comparison functionality
+    TODO: Implement model comparison functionality via Airflow trigger
     """
     try:
-        df = pd.read_csv(request.dataset_id)
+        df = storage_service.get_dataset(request.dataset_id)
+        # Placeholder logic...
+        return {"message": "Model comparison logic to be implemented via Airflow"}
     except Exception as e:  
         raise HTTPException(
             status_code=501,
@@ -198,7 +234,7 @@ async def compare_models(request: ModelComparisonRequest):
 async def list_experiments():
     """
     List all sandbox experiments
-    TODO: Implement experiment tracking
+    TODO: Implement experiment tracking via DB
     """
     return {
         "experiments": [],
@@ -209,7 +245,7 @@ async def list_experiments():
 async def create_experiment(config: ExperimentConfig):
     """
     Create new sandbox experiment
-    TODO: Implement experiment creation
+    TODO: Implement experiment creation via DB
     """
     raise HTTPException(
         status_code=501,
@@ -220,7 +256,7 @@ async def create_experiment(config: ExperimentConfig):
 async def delete_experiment(experiment_id: str):
     """
     Delete sandbox experiment
-    TODO: Implement experiment deletion
+    TODO: Implement experiment deletion via DB
     """
     raise HTTPException(
         status_code=501,
@@ -231,7 +267,7 @@ async def delete_experiment(experiment_id: str):
 async def evaluate_synthetic_quality(dataset_id: str):
     """
     Evaluate quality of synthetic data
-    TODO: Implement quality metrics calculation
+    TODO: Trigger an Airflow DAG for quality evaluation
     """
     raise HTTPException(
         status_code=501,
@@ -242,11 +278,10 @@ async def evaluate_synthetic_quality(dataset_id: str):
 async def get_system_resources():
     """
     Get available system resources for sandbox testing
-    TODO: Implement system resource monitoring for sandbox
     """
     return {
         "cpu_available": True,
-        "gpu_available": False,
+        "gpu_available": False, 
         "memory_available": "Unknown",
         "message": "System resource monitoring not fully implemented"
     }

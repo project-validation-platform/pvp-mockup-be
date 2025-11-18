@@ -5,7 +5,7 @@ import torch
 from datetime import datetime
 
 from app.core.config import settings
-from app.services.storage_service import storage_service
+from pvp_core_lib.storage import storage_service
 
 router = APIRouter()
 
