@@ -7,23 +7,24 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from app.core.config import settings
-from app.core.exceptions import AppException, convert_to_http_exception
+from app.db.session import init_db
 from app.utils.logging import setup_logging
 
 # Import API router
 from app.api.v1.router import api_router
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    # Startup
     setup_logging()
+    init_db()
     logging.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}")
-    
+
     yield
-    
-    # Shutdown
+
     logging.info("Shutting down application")
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -42,20 +43,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global exception handlers
-@app.exception_handler(AppException)
-async def app_exception_handler(request: Request, exc: AppException):
-    """Handle custom application exceptions"""
-    logging.error(f"Application error: {exc.message}", extra={"details": exc.details})
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "message": exc.message,
-                "details": exc.details
-            }
-        }
-    )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):

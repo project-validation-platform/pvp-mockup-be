@@ -10,8 +10,16 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DEBUG: bool = True
     
+    # Airflow Settings
+    AIRFLOW_API_URL: str = "http://localhost:8080/api/v2"
+    AIRFLOW_API_USER: str = "admin"
+    AIRFLOW_API_PASS: str = "admin"
+
     # CORS Settings
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    
+    # DB Settings
+    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
     
     # File Storage
     DATA_DIR: str = "data"
@@ -39,7 +47,6 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Ensure directories exist
         Path(self.DATA_DIR).mkdir(exist_ok=True)
         Path(self.MODEL_DIR).mkdir(exist_ok=True)
 
