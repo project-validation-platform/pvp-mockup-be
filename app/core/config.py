@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
-from pydantic_settings import BaseSettings
 from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # API Settings
@@ -41,9 +41,12 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
+    # 2. Config Definition
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        extra="ignore"
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
