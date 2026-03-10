@@ -4,25 +4,18 @@ services:
     image: postgres:16-alpine
     container_name: pvp_db
     
-    # Environment variables for configuration
     environment:
-      # !! CHANGE THESE VALUES FOR PRODUCTION !!
-      # Required: sets the password for the superuser (postgres)
-      POSTGRES_PASSWORD: postgres
-      
-      # Optional: sets a user with superuser privileges (and creates a DB with the same name)
-      POSTGRES_USER: postgres
-      
-      # Optional: sets the name of the default database
-      POSTGRES_DB: postgres
-      
-      # Defines the directory where data will be stored (default is /var/lib/postgresql/data)
-      PVPDATA: /var/lib/postgresql/data/pvp_data
+      # Use these credentials in your application connection string
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: password1!
+      POSTGRES_DB: pvp_database
+      # Optional: Explicitly tell Postgres where to store data inside the container
+      PGDATA: /var/lib/postgresql/data/pgdata
       
     # Map the container's port 5432 to your host machine's port 5432
     # This allows you to connect from your local machine (e.g., using a client like DBeaver)
     ports:
-      - "5432:5432"
+      - "8001:5432"
 
     # Mount a volume for data persistence. Data will be saved on your host machine.
     volumes:
@@ -36,13 +29,6 @@ services:
       
     # Ensure the container restarts unless manually stopped
     restart: unless-stopped
-    
-    # Healthcheck configuration (good practice)
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user -d experiment_tracker_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 volumes:
   pvp_data:

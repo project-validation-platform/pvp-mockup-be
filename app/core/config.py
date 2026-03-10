@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     
     # DB Settings
-    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/postgres"
+    DATABASE_URL: str = "postgresql+psycopg2://testuser:password1!@localhost:8001/pvp_database"
     
     # File Storage
     DATA_DIR: str = "data"
